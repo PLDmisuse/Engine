@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chess</title>
+<style>
+  :root{
+    --bg:#121417;
+    --panel:rgba(29,33,39,.82);
+    --panel-2:rgba(40,45,53,.72);
+    --text:#f3f5f7;
+    --muted:#aab2bc;
+    --light:#f0d9b5;
+    --dark:#b58863;
+    --light-hover:#f6e2bd;
+    --dark-hover:#c2956e;
+    --accent:#67a5ff;
+    --accent-2:#87c7ff;
+    --check:#e25c5c;
+    --last:rgba(255,221,88,.42);
+    --selected:rgba(96,165,250,.42);
+    --move-dot:rgba(20,25,30,.34);
+    --capture:rgba(225,70,70,.78);
+    --board-edge:rgba(255,255,255,.11);
+  }
+
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#e9edf2;
+      --panel:rgba(255,255,255,.84);
+      --panel-2:rgba(245,247,250,.92);
+      --text:#171a1f;
+      --muted:#5d6672;
+      --board-edge:rgba(0,0,0,.12);
+    }
+  }
+
+  *{box-sizing:border-box}
+  html{min-height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:24px 14px calc(24px + env(safe-area-inset-bottom,0px));
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:var(--text);
+    background:
+      radial-gradient(circle at top, rgba(103,165,255,.17), transparent 34%),
+      radial-gradient(circle at 85% 10%, rgba(135,199,255,.08), transparent 28%),
+      var(--bg);
+  }
+
+  .app{width:min(94vw,720px);display:flex;flex-direction:column;align-items:center;gap:15px}
+
+  .topbar{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    padding:14px 16px;
+    border:1px solid var(--board-edge);
+    border-radius:18px;
+    background:var(--panel);
+    backdrop-filter:blur(14px);
+    box-shadow:0 12px 34px rgba(0,0,0,.18);
+  }
+  .title-wrap{min-width:0}
+  h1{margin:0;font-size:1.25rem;letter-spacing:-.03em}
+  .subtitle{margin-top:2px;color:var(--muted);font-size:.8rem}
+  #status{font-size:.9rem;font-weight:650;text-align:right;min-width:150px}
+  #status.thinking::after{content:"";display:inline-block;width:1.05em;text-align:left;animation:dots 1.1s steps(4,end) infinite}
+  @keyframes dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}100%{content:""}}
+
+  .board-wrap{
+    width:min(92vw,620px);
+    padding:10px;
+    border-radius:22px;
+    background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(0,0,0,.12));
+    border:1px solid var(--board-edge);
+    box-shadow:0 24px 55px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.08);
+  }
+
+  #board{
+    display:grid;
+    grid-template-columns:repeat(8,1fr);
+    grid-template-rows:repeat(8,1fr);
+    width:100%;
+    aspect-ratio:1;
+    overflow:hidden;
+    border-radius:13px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.18),0 10px 24px rgba(0,0,0,.22);
+    touch-action:manipulation;
+  }
+
+  .sq{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-width:0;
+    cursor:pointer;
+    user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    transition:filter .12s ease,box-shadow .12s ease;
+  }
+  .sq.light{background:var(--light)}
+  .sq.dark{background:var(--dark)}
+  .sq:hover{filter:brightness(1.035)}
+  .sq.selected{box-shadow:inset 0 0 0 4px var(--selected)}
+  .sq.last-move::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:var(--last);
+    pointer-events:none;
+  }
+  .sq.in-check{
+    box-shadow:inset 0 0 0 999px rgba(226,92,92,.62);
+  }
+
+  .piece{
+    position:relative;
+    z-index:2;
+    font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols 2",serif;
+    font-size:clamp(29px,8.6vw,64px);
+    line-height:1;
+    transform:translateY(-1px);
+    transition:transform .1s ease;
+  }
+  .sq:hover .piece{transform:translateY(-2px) scale(1.025)}
+  .piece-w{color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.7),0 4px 12px rgba(0,0,0,.28)}
+  .piece-b{color:#1b1d20;text-shadow:0 1px 0 rgba(255,255,255,.24),0 3px 8px rgba(0,0,0,.22)}
+
+  .move-dot::after{
+    content:"";
+    position:absolute;
+    z-index:1;
+    width:22%;height:22%;
+    border-radius:50%;
+    background:var(--move-dot);
+  }
+  .capture-hint::after{
+    content:"";
+    position:absolute;
+    z-index:1;
+    inset:10%;
+    border-radius:50%;
+    border:4px solid var(--capture);
+  }
+
+  .coord-file,.coord-rank{
+    position:absolute;
+    z-index:3;
+    font-size:clamp(9px,2vw,13px);
+    font-weight:750;
+    pointer-events:none;
+    opacity:.84;
+  }
+  .coord-file{right:6px;bottom:4px}
+  .coord-rank{left:6px;top:4px}
+  .light .coord-file,.light .coord-rank{color:rgba(110,75,50,.82)}
+  .dark .coord-file,.dark .coord-rank{color:rgba(255,244,226,.86)}
+
+  .controls{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    padding:13px;
+    border:1px solid var(--board-edge);
+    border-radius:16px;
+    background:var(--panel);
+    backdrop-filter:blur(14px);
+    box-shadow:0 10px 28px rgba(0,0,0,.14);
+  }
+  button{
+    border:1px solid rgba(255,255,255,.13);
+    color:#fff;
+    background:linear-gradient(180deg,#3d77c9,#315fa4);
+    padding:10px 18px;
+    border-radius:11px;
+    font-size:.9rem;
+    font-weight:700;
+    cursor:pointer;
+    box-shadow:0 7px 16px rgba(38,92,163,.28),inset 0 1px 0 rgba(255,255,255,.16);
+    transition:transform .12s ease,filter .12s ease;
+  }
+  button:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  button:active{transform:translateY(0)}
+  button:focus-visible{outline:3px solid rgba(103,165,255,.5);outline-offset:2px}
+
+  .tip{color:var(--muted);font-size:.78rem;text-align:center}
+  @media (max-width:520px){
+    body{padding-top:14px}
+    .topbar{padding:12px 13px;border-radius:15px}
+    #status{min-width:0;font-size:.8rem}
+    .board-wrap{padding:7px;border-radius:17px}
+  }
+</style>
+</head>
+<body>
+  <main class="app">
+    <div class="topbar">
+      <div class="title-wrap">
+        <h1>Chess</h1>
+        <div class="subtitle">You play White · stronger tactical engine</div>
+      </div>
+      <div id="status">White to move</div>
+    </div>
+
+    <div class="board-wrap">
+      <div id="board" aria-label="Chess board"></div>
+    </div>
+
+    <div class="controls">
+      <button id="resetBtn" type="button">New Game</button>
+    </div>
+    <div class="tip">Click a piece, then a highlighted square. The engine searches deeper when the position is quiet.</div>
+  </main>
+
+<script>
+/* ---------- constants ---------- */
+const UNICODE = {
+  wK:'\u2654', wQ:'\u2655', wR:'\u2656', wB:'\u2657', wN:'\u2658', wP:'\u2659',
+  bK:'\u265A', bQ:'\u265B', bR:'\u265C', bB:'\u265D', bN:'\u265E', bP:'\u265F'
+};
+
+const VALUES = {P:100,N:320,B:330,R:500,Q:900,K:0};
+const KNIGHT_OFFSETS = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+const KING_OFFSETS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const BISHOP_DIRS = [[-1,-1],[-1,1],[1,-1],[1,1]];
+const ROOK_DIRS = [[-1,0],[1,0],[0,-1],[0,1]];
+const HUMAN_COLOR = 'w';
+const MAX_DEPTH = 10;
+const THINK_TIME_MS = 1800;
+const MATE_SCORE = 100000;
+const MATE_THRESHOLD = 90000;
+
+/* Piece-square tables, from White's point of view, rank 8 -> rank 1. */
+const PST = {
+  P:[
+     0,  0,  0,  0,  0,  0,  0,  0,
+    50, 50, 50, 50, 50, 50, 50, 50,
+    12, 14, 18, 20, 20, 18, 14, 12,
+     6,  8, 10, 18, 18, 10,  8,  6,
+     2,  4,  8, 16, 16,  8,  4,  2,
+     4, -2, -4, -8, -8, -4, -2,  4,
+     4,  6,  8,-14,-14,  8,  6,  4,
+     0,  0,  0,  0,  0,  0,  0,  0
+  ],
+  N:[
+    -50,-40,-30,-30,-30,-30,-40,-50,
+    -40,-20,  0,  2,  2,  0,-20,-40,
+    -30,  2, 12, 16, 16, 12,  2,-30,
+    -30,  4, 18, 24, 24, 18,  4,-30,
+    -30,  2, 18, 24, 24, 18,  2,-30,
+    -30,  4, 12, 16, 16, 12,  4,-30,
+    -40,-20,  0,  4,  4,  0,-20,-40,
+    -50,-40,-30,-30,-30,-30,-40,-50
+  ],
+  B:[
+    -20,-10,-10,-10,-10,-10,-10,-20,
+    -10,  5,  0,  2,  2,  0,  5,-10,
+    -10, 10,  8, 10, 10,  8, 10,-10,
+    -10,  0,  8, 12, 12,  8,  0,-10,
+    -10,  6, 10, 12, 12, 10,  6,-10,
+    -10,  8,  8, 10, 10,  8,  8,-10,
+    -10,  5,  0,  4,  4,  0,  5,-10,
+    -20,-10,-10,-10,-10,-10,-10,-20
+  ],
+  R:[
+      0,  0,  2,  4,  4,  2,  0,  0,
+     -4,  0,  2,  4,  4,  2,  0, -4,
+     -4,  0,  2,  4,  4,  2,  0, -4,
+     -4,  0,  2,  4,  4,  2,  0, -4,
+     -4,  0,  2,  4,  4,  2,  0, -4,
+     -4,  0,  2,  4,  4,  2,  0, -4,
+     10, 12, 14, 16, 16, 14, 12, 10,
+      0,  0,  2,  4,  4,  2,  0,  0
+  ],
+  Q:[
+    -20,-10,-10, -5, -5,-10,-10,-20,
+    -10,  0,  4,  4,  4,  4,  0,-10,
+    -10,  4,  8, 10, 10,  8,  4,-10,
+     -5,  4, 10, 12, 12, 10,  4, -5,
+      0,  4, 10, 12, 12, 10,  4,  0,
+    -10,  4,  8, 10, 10,  8,  4,-10,
+    -10,  0,  4,  4,  4,  4,  0,-10,
+    -20,-10,-10, -5, -5,-10,-10,-20
+  ],
+  K:[
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -20,-30,-30,-40,-40,-30,-30,-20,
+    -10,-20,-20,-20,-20,-20,-20,-10,
+     18, 18,  0,  0,  0,  0, 18, 18,
+     24, 30, 10,  0,  0, 10, 30, 24
+  ],
+  KE:[
+    -50,-30,-20,-10,-10,-20,-30,-50,
+    -30,-10,  8, 16, 16,  8,-10,-30,
+    -20,  8, 20, 26, 26, 20,  8,-20,
+    -10, 16, 26, 34, 34, 26, 16,-10,
+    -10, 16, 26, 34, 34, 26, 16,-10,
+    -20,  8, 20, 26, 26, 20,  8,-20,
+    -30,-10,  8, 16, 16,  8,-10,-30,
+    -50,-30,-20,-10,-10,-20,-30,-50
+  ]
+};
+
+/* ---------- helpers ---------- */
+function inBounds(r,c){ return r>=0 && r<8 && c>=0 && c<8; }
+function cloneBoard(b){ return b.map(row=>row.map(p=>p?{...p}:null)); }
+function cloneState(s){ return {turn:s.turn, castling:{...s.castling}, enPassant:s.enPassant?{...s.enPassant}:null, halfmoveClock:s.halfmoveClock||0}; }
+function opponent(color){ return color==='w' ? 'b' : 'w'; }
+function moveKey(m){ return `${m.from[0]}${m.from[1]}${m.to[0]}${m.to[1]}${m.promotion||''}`; }
+
+/* ---------- board setup ---------- */
+function createInitialBoard(){
+  const b=Array.from({length:8},()=>Array(8).fill(null));
+  const back=['R','N','B','Q','K','B','N','R'];
+  for(let c=0;c<8;c++){
+    b[0][c]={type:back[c],color:'b'};
+    b[1][c]={type:'P',color:'b'};
+    b[6][c]={type:'P',color:'w'};
+    b[7][c]={type:back[c],color:'w'};
+  }
+  return b;
+}
+
+function findKing(board,color){
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p=board[r][c];
+    if(p && p.type==='K' && p.color===color) return {r,c};
+  }
+  return null;
+}
+
+/* ---------- attack detection ---------- */
+function isSquareAttacked(board,r,c,byColor){
+  const pawnDir=byColor==='w'?1:-1;
+  for(const dc of [-1,1]){
+    const pr=r+pawnDir,pc=c+dc;
+    if(inBounds(pr,pc)){
+      const p=board[pr][pc];
+      if(p && p.type==='P' && p.color===byColor) return true;
+    }
+  }
+  for(const [dr,dc] of KNIGHT_OFFSETS){
+    const pr=r+dr,pc=c+dc;
+    if(inBounds(pr,pc)){
+      const p=board[pr][pc];
+      if(p && p.type==='N' && p.color===byColor) return true;
+    }
+  }
+  for(const [dr,dc] of KING_OFFSETS){
+    const pr=r+dr,pc=c+dc;
+    if(inBounds(pr,pc)){
+      const p=board[pr][pc];
+      if(p && p.type==='K' && p.color===byColor) return true;
+    }
+  }
+  for(const [dr,dc] of BISHOP_DIRS){
+    let pr=r+dr,pc=c+dc;
+    while(inBounds(pr,pc)){
+      const p=board[pr][pc];
+      if(p){
+        if(p.color===byColor&&(p.type==='B'||p.type==='Q')) return true;
+        break;
+      }
+      pr+=dr;pc+=dc;
+    }
+  }
+  for(const [dr,dc] of ROOK_DIRS){
+    let pr=r+dr,pc=c+dc;
+    while(inBounds(pr,pc)){
+      const p=board[pr][pc];
+      if(p){
+        if(p.color===byColor&&(p.type==='R'||p.type==='Q')) return true;
+        break;
+      }
+      pr+=dr;pc+=dc;
+    }
+  }
+  return false;
+}
+function isInCheck(board,color){
+  const kp=findKing(board,color);
+  return !!kp && isSquareAttacked(board,kp.r,kp.c,opponent(color));
+}
+
+/* ---------- pseudo-legal move generation ---------- */
+function pseudoMovesForPiece(board,r,c,state,capturesOnly=false){
+  const piece=board[r][c];
+  if(!piece) return [];
+  const moves=[];
+  const color=piece.color,opp=opponent(color);
+  const push=(toR,toC,extra={})=>{
+    if(!capturesOnly) moves.push({from:[r,c],to:[toR,toC],...extra});
+  };
+
+  if(piece.type==='P'){
+    const dir=color==='w'?-1:1;
+    const startRow=color==='w'?6:1;
+    const promRow=color==='w'?0:7;
+    const oneR=r+dir;
+    if(inBounds(oneR,c) && !board[oneR][c] && !capturesOnly){
+      if(oneR===promRow){
+        for(const promotion of ['Q','R','B','N']) moves.push({from:[r,c],to:[oneR,c],promotion});
+      }else{
+        moves.push({from:[r,c],to:[oneR,c]});
+        const twoR=r+2*dir;
+        if(r===startRow && !board[twoR][c]) moves.push({from:[r,c],to:[twoR,c],doubleStep:true});
+      }
+    }
+    for(const dc of [-1,1]){
+      const nc=c+dc;
+      if(!inBounds(oneR,nc)) continue;
+      const target=board[oneR][nc];
+      if(target && target.color===opp){
+        if(oneR===promRow){
+          for(const promotion of ['Q','R','B','N']) moves.push({from:[r,c],to:[oneR,nc],promotion,capture:true});
+        }else moves.push({from:[r,c],to:[oneR,nc],capture:true});
+      }else if(!target && state.enPassant && state.enPassant.r===oneR && state.enPassant.c===nc){
+        moves.push({from:[r,c],to:[oneR,nc],enPassant:true,capture:true});
+      }
+    }
+  }else if(piece.type==='N'){
+    for(const [dr,dc] of KNIGHT_OFFSETS){
+      const nr=r+dr,nc=c+dc;if(!inBounds(nr,nc)) continue;
+      const target=board[nr][nc];
+      if(!target) push(nr,nc); else if(target.color===opp) moves.push({from:[r,c],to:[nr,nc],capture:true});
+    }
+  }else if(piece.type==='B'||piece.type==='R'||piece.type==='Q'){
+    const dirs=piece.type==='B'?BISHOP_DIRS:piece.type==='R'?ROOK_DIRS:[...BISHOP_DIRS,...ROOK_DIRS];
+    for(const [dr,dc] of dirs){
+      let nr=r+dr,nc=c+dc;
+      while(inBounds(nr,nc)){
+        const target=board[nr][nc];
+        if(!target) push(nr,nc);
+        else{
+          if(target.color===opp) moves.push({from:[r,c],to:[nr,nc],capture:true});
+          break;
+        }
+        nr+=dr;nc+=dc;
+      }
+    }
+  }else if(piece.type==='K'){
+    for(const [dr,dc] of KING_OFFSETS){
+      const nr=r+dr,nc=c+dc;if(!inBounds(nr,nc)) continue;
+      const target=board[nr][nc];
+      if(!target) push(nr,nc); else if(target.color===opp) moves.push({from:[r,c],to:[nr,nc],capture:true});
+    }
+    if(!capturesOnly){
+      const rights=state.castling,home=color==='w'?7:0;
+      const ks=color==='w'?rights.wK:rights.bK;
+      const qs=color==='w'?rights.wQ:rights.bQ;
+      if(r===home&&c===4){
+        if(ks&&!board[home][5]&&!board[home][6]&&board[home][7]?.type==='R'&&board[home][7]?.color===color &&
+           !isSquareAttacked(board,home,4,opp)&&!isSquareAttacked(board,home,5,opp)&&!isSquareAttacked(board,home,6,opp)){
+          moves.push({from:[r,c],to:[home,6],castle:'K'});
+        }
+        if(qs&&!board[home][1]&&!board[home][2]&&!board[home][3]&&board[home][0]?.type==='R'&&board[home][0]?.color===color &&
+           !isSquareAttacked(board,home,4,opp)&&!isSquareAttacked(board,home,3,opp)&&!isSquareAttacked(board,home,2,opp)){
+          moves.push({from:[r,c],to:[home,2],castle:'Q'});
+        }
+      }
+    }
+  }
+  return capturesOnly ? moves.filter(m=>m.capture) : moves;
+}
+
+function makeMove(board,state,move){
+  const nb=cloneBoard(board),ns=cloneState(state);
+  const [fr,fc]=move.from,[tr,tc]=move.to;
+  const piece=nb[fr][fc];
+  const color=piece.color;
+
+  if(move.enPassant){ nb[color==='w'?tr+1:tr-1][tc]=null; }
+  nb[tr][tc]=piece;nb[fr][fc]=null;
+  if(move.promotion) nb[tr][tc]={type:move.promotion,color};
+
+  if(move.castle==='K'){nb[fr][5]=nb[fr][7];nb[fr][7]=null;}
+  else if(move.castle==='Q'){nb[fr][3]=nb[fr][0];nb[fr][0]=null;}
+
+  if(piece.type==='K'){
+    if(color==='w'){ns.castling.wK=false;ns.castling.wQ=false;}else{ns.castling.bK=false;ns.castling.bQ=false;}
+  }
+  if(piece.type==='R'){
+    if(color==='w'&&fr===7&&fc===0)ns.castling.wQ=false;
+    if(color==='w'&&fr===7&&fc===7)ns.castling.wK=false;
+    if(color==='b'&&fr===0&&fc===0)ns.castling.bQ=false;
+    if(color==='b'&&fr===0&&fc===7)ns.castling.bK=false;
+  }
+  if(tr===7&&tc===0)ns.castling.wQ=false;
+  if(tr===7&&tc===7)ns.castling.wK=false;
+  if(tr===0&&tc===0)ns.castling.bQ=false;
+  if(tr===0&&tc===7)ns.castling.bK=false;
+
+  ns.enPassant=move.doubleStep?{r:(fr+tr)/2,c:fc}:null;
+  ns.halfmoveClock=(piece.type==='P'||move.capture)?0:(state.halfmoveClock||0)+1;
+  ns.turn=opponent(color);
+  return {board:nb,state:ns};
+}
+
+function generatePseudoMoves(board,color,state,capturesOnly=false){
+  const all=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c];
+    if(p&&p.color===color) all.push(...pseudoMovesForPiece(board,r,c,state,capturesOnly));
+  }
+  return all;
+}
+
+function generateLegalMoves(board,color,state,capturesOnly=false){
+  const all=generatePseudoMoves(board,color,state,capturesOnly);
+  const legal=[];
+  for(const m of all){
+    const result=makeMove(board,state,m);
+    const kp=findKing(result.board,color);
+    if(kp&&!isSquareAttacked(result.board,kp.r,kp.c,opponent(color))) legal.push(m);
+  }
+  return legal;
+}
+
+/* ---------- evaluation ---------- */
+function tableValue(type,r,c,color,endgame){
+  let rr=color==='w'?r:7-r;
+  if(type==='K' && endgame) return PST.KE[rr*8+c];
+  return PST[type][rr*8+c]||0;
+}
+
+function evaluate(board){
+  let score=0;
+  let nonPawnMaterial=0;
+  let whiteBishops=0,blackBishops=0;
+  const pawnFilesW=Array(8).fill(0),pawnFilesB=Array(8).fill(0);
+  const pawns=[];
+  let whiteKing=null,blackKing=null;
+
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c];if(!p)continue;
+    if(p.type!=='P'&&p.type!=='K') nonPawnMaterial+=VALUES[p.type];
+    if(p.type==='B'){if(p.color==='w')whiteBishops++;else blackBishops++;}
+    if(p.type==='P'){
+      if(p.color==='w')pawnFilesW[c]++;else pawnFilesB[c]++;
+      pawns.push({r,c,color:p.color});
+    }
+    if(p.type==='K'){if(p.color==='w')whiteKing={r,c};else blackKing={r,c};}
+  }
+
+  const endgame=nonPawnMaterial<2600;
+
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c];if(!p)continue;
+    const sign=p.color==='w'?1:-1;
+    score+=sign*(VALUES[p.type]+tableValue(p.type,r,c,p.color,endgame));
+  }
+
+  /* Pawn structure + passed pawns. */
+  for(let c=0;c<8;c++){
+    if(pawnFilesW[c]>1) score-=12*(pawnFilesW[c]-1);
+    if(pawnFilesB[c]>1) score+=12*(pawnFilesB[c]-1);
+    if(pawnFilesW[c]===0&&pawnFilesW[Math.max(0,c-1)]===0&&pawnFilesW[Math.min(7,c+1)]===0) score-=5;
+    if(pawnFilesB[c]===0&&pawnFilesB[Math.max(0,c-1)]===0&&pawnFilesB[Math.min(7,c+1)]===0) score+=5;
+  }
+  for(const p of pawns){
+    let passed=true;
+    for(const q of pawns){
+      if(q.color===p.color)continue;
+      if(Math.abs(q.c-p.c)<=1){
+        if(p.color==='w' ? q.r<p.r : q.r>p.r){ passed=false;break; }
+      }
+    }
+    if(passed){
+      const advance=p.color==='w'?6-p.r:p.r-1;
+      score+=(p.color==='w'?1:-1)*(22+advance*12);
+    }
+  }
+
+  if(whiteBishops>=2)score+=28;
+  if(blackBishops>=2)score-=28;
+
+  /* Rooks prefer open/semi-open files. */
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c];
+    if(!p||p.type!=='R')continue;
+    const own=p.color==='w'?pawnFilesW[c]:pawnFilesB[c];
+    const enemy=p.color==='w'?pawnFilesB[c]:pawnFilesW[c];
+    const sign=p.color==='w'?1:-1;
+    if(own===0) score+=sign*(enemy===0?20:10);
+    if((p.color==='w'&&r===1)||(p.color==='b'&&r===6)) score+=sign*12;
+  }
+
+  /* Small mobility term; this makes the engine less material-only without making search huge. */
+  const mobilityW=generatePseudoMoves(board,'w',{turn:'w',castling:{wK:false,wQ:false,bK:false,bQ:false},enPassant:null},true).length;
+  const mobilityB=generatePseudoMoves(board,'b',{turn:'b',castling:{wK:false,wQ:false,bK:false,bQ:false},enPassant:null},true).length;
+  score+=(mobilityW-mobilityB)*2;
+
+  /* King safety in the middlegame, king centralization in the endgame is already in PST. */
+  if(!endgame){
+    if(whiteKing){
+      if(whiteKing.r===7&&(whiteKing.c===6||whiteKing.c===2))score+=18;
+      if(isSquareAttacked(board,whiteKing.r,whiteKing.c,'b'))score-=18;
+    }
+    if(blackKing){
+      if(blackKing.r===0&&(blackKing.c===6||blackKing.c===2))score-=18;
+      if(isSquareAttacked(board,blackKing.r,blackKing.c,'w'))score+=18;
+    }
+  }
+
+  return score;
+}
+
+function hasInsufficientMaterial(board){
+  const minors=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c];if(!p||p.type==='K')continue;
+    if(p.type==='P'||p.type==='R'||p.type==='Q')return false;
+    minors.push({type:p.type,color:p.color,sq:(r+c)%2});
+  }
+  if(minors.length===0)return true;
+  if(minors.length===1)return true;
+  if(minors.length===2){
+    const [a,b]=minors;
+    if(a.type==='B'&&b.type==='B'&&a.color!==b.color&&a.sq===b.sq)return true;
+  }
+  return false;
+}
+
+function hasNonPawnMaterial(board,color){
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c];
+    if(p&&p.color===color&&p.type!=='P'&&p.type!=='K')return true;
+  }
+  return false;
+}
+
+/* ---------- search ---------- */
+let searchStarted=0;
+let stopSearch=false;
+const TT=new Map();
+const killerMoves=Array.from({length:32},()=>[]);
+const historyHeuristic={w:new Int32Array(4096),b:new Int32Array(4096)};
+
+function positionKey(board,state){
+  let s=state.turn+(state.castling.wK?'K':'')+(state.castling.wQ?'Q':'')+(state.castling.bK?'k':'')+(state.castling.bQ?'q':'');
+  s+='|'+(state.enPassant?`${state.enPassant.r}${state.enPassant.c}`:'-')+'|';
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c];s+=p?(p.color+p.type):'--';
+  }
+  return s;
+}
+
+function moveOrderingScore(board,move,ttMove,ply,color){
+  let score=0;
+  if(ttMove&&moveKey(move)===moveKey(ttMove))score+=1000000;
+  if(move.promotion)score+=800000+VALUES[move.promotion]*20;
+  if(move.capture){
+    const target=move.enPassant?{type:'P'}:board[move.to[0]][move.to[1]];
+    const attacker=board[move.from[0]][move.from[1]];
+    score+=500000+(target?VALUES[target.type]:100)-VALUES[attacker.type]/10;
+  }
+  if(move.castle)score+=5000;
+  const killers=killerMoves[ply]||[];
+  if(killers.some(k=>k&&moveKey(k)===moveKey(move)))score+=4000;
+  score+=historyHeuristic[color][move.from[0]*512+move.from[1]*64+move.to[0]*8+move.to[1]]||0;
+  return score;
+}
+
+function orderMoves(board,moves,ttMove,ply,color){
+  moves.sort((a,b)=>moveOrderingScore(board,b,ttMove,ply,color)-moveOrderingScore(board,a,ttMove,ply,color));
+  return moves;
+}
+
+function isTimeUp(){ return performance.now()-searchStarted>=THINK_TIME_MS; }
+
+function quiescence(board,state,alpha,beta,ply,depthLeft){
+  if(isTimeUp()){stopSearch=true;return 0;}
+  const color=state.turn;
+  const inCheck=isInCheck(board,color);
+
+  /* A checked side cannot use stand-pat; it must find an evasion first. */
+  if(inCheck){
+    const evasions=generateLegalMoves(board,color,state,false);
+    if(!evasions.length)return -MATE_SCORE+ply;
+    if(depthLeft<=0){
+      /* Still resolve the immediate check at the leaf. */
+      let best=-Infinity;
+      orderMoves(board,evasions,null,ply,color);
+      for(const m of evasions){
+        const result=makeMove(board,state,m);
+        const score=-quiescence(result.board,result.state,-beta,-alpha,ply+1,0);
+        if(stopSearch)return 0;
+        if(score>best)best=score;
+        if(score>alpha)alpha=score;
+        if(alpha>=beta)break;
+      }
+      return best;
+    }
+    orderMoves(board,evasions,null,ply,color);
+    for(const m of evasions){
+      const result=makeMove(board,state,m);
+      const score=-quiescence(result.board,result.state,-beta,-alpha,ply+1,depthLeft-1);
+      if(stopSearch)return 0;
+      if(score>=beta)return beta;
+      if(score>alpha)alpha=score;
+    }
+    return alpha;
+  }
+
+  const standPat=(color==='w'?1:-1)*evaluate(board);
+  if(standPat>=beta)return beta;
+  if(standPat>alpha)alpha=standPat;
+  if(depthLeft<=0)return standPat;
+
+  const moves=generateLegalMoves(board,color,state,true);
+  orderMoves(board,moves,null,ply,color);
+  for(const m of moves){
+    const result=makeMove(board,state,m);
+    const score=-quiescence(result.board,result.state,-beta,-alpha,ply+1,depthLeft-1);
+    if(stopSearch)return 0;
+    if(score>=beta)return beta;
+    if(score>alpha)alpha=score;
+  }
+  return alpha;
+}
+
+function negamax(board,state,depth,alpha,beta,ply,canNull=true){
+  if(isTimeUp()){stopSearch=true;return 0;}
+  const color=state.turn;
+  const key=positionKey(board,state);
+  const alphaOrig=alpha;
+  const cached=TT.get(key);
+  if(cached&&cached.depth>=depth){
+    if(cached.flag==='exact')return cached.score;
+    if(cached.flag==='lower')alpha=Math.max(alpha,cached.score);
+    else if(cached.flag==='upper')beta=Math.min(beta,cached.score);
+    if(alpha>=beta)return cached.score;
+  }
+
+  const inCheck=isInCheck(board,color);
+
+  /* Null-move pruning: skip our move entirely and see if the opponent still
+     can't beat beta. Disabled in check, near mate scores, and when the side
+     to move has only pawns left (zugzwang risk). */
+  if(canNull&&!inCheck&&depth>=3&&Math.abs(beta)<MATE_THRESHOLD&&hasNonPawnMaterial(board,color)){
+    const R=depth>=6?3:2;
+    const nullState={turn:opponent(color),castling:state.castling,enPassant:null,halfmoveClock:state.halfmoveClock||0};
+    const nullScore=-negamax(board,nullState,depth-1-R,-beta,-beta+1,ply+1,false);
+    if(stopSearch)return 0;
+    if(nullScore>=beta)return beta;
+  }
+
+  const moves=generateLegalMoves(board,color,state);
+  if(moves.length===0){
+    return inCheck ? -MATE_SCORE+ply : 0;
+  }
+  if(depth===0)return quiescence(board,state,alpha,beta,ply,3);
+
+  const ttMove=cached?.move||null;
+  orderMoves(board,moves,ttMove,ply,color);
+
+  /* Checks are forcing, so search them a ply deeper instead of shallower. */
+  const ext=inCheck?1:0;
+
+  let best=-Infinity,bestMove=moves[0],moveCount=0;
+  for(const m of moves){
+    moveCount++;
+    const result=makeMove(board,state,m);
+    const isQuiet=!m.capture&&!m.promotion&&!m.castle;
+    let score;
+
+    /* Late move reductions: search quiet moves that sort late in the list
+       at a shallower depth first, and only re-search at full depth if they
+       turn out to be better than expected. */
+    if(ext===0&&depth>=3&&moveCount>4&&isQuiet){
+      const reduction=moveCount>10?2:1;
+      const reducedDepth=Math.max(0,depth-1-reduction);
+      score=-negamax(result.board,result.state,reducedDepth,-alpha-1,-alpha,ply+1,true);
+      if(!stopSearch&&score>alpha){
+        score=-negamax(result.board,result.state,depth-1,-beta,-alpha,ply+1,true);
+      }
+    }else{
+      score=-negamax(result.board,result.state,depth-1+ext,-beta,-alpha,ply+1,true);
+    }
+
+    if(stopSearch)return 0;
+    if(score>best){best=score;bestMove=m;}
+    if(score>alpha)alpha=score;
+    if(alpha>=beta){
+      if(!m.capture){
+        const killers=killerMoves[ply];
+        if(!killers[0]||moveKey(killers[0])!==moveKey(m))killers.unshift(m);
+        if(killers.length>2)killers.length=2;
+        const idx=m.from[0]*512+m.from[1]*64+m.to[0]*8+m.to[1];
+        historyHeuristic[color][idx]=Math.min(30000,historyHeuristic[color][idx]+depth*depth*3);
+      }
+      break;
+    }
+  }
+
+  let flag='exact';
+  if(best<=alphaOrig)flag='upper';
+  else if(best>=beta)flag='lower';
+  TT.set(key,{depth,score:best,flag,move:bestMove});
+  return best;
+}
+
+function findBestMove(board,state){
+  searchStarted=performance.now();stopSearch=false;TT.clear();
+  let bestMove=null,bestScore=-Infinity,completedDepth=0;
+  const rootColor=state.turn;
+  let rootMoves=generateLegalMoves(board,rootColor,state);
+  if(!rootMoves.length)return null;
+  orderMoves(board,rootMoves,null,0,rootColor);
+
+  for(let depth=1;depth<=MAX_DEPTH;depth++){
+    if(isTimeUp())break;
+    let alpha=-Infinity,beta=Infinity;
+    let iterationBest=rootMoves[0],iterationScore=-Infinity;
+    const cachedRoot=TT.get(positionKey(board,state));
+    orderMoves(board,rootMoves,cachedRoot?.move||bestMove,0,rootColor);
+
+    for(const m of rootMoves){
+      const result=makeMove(board,state,m);
+      const score=-negamax(result.board,result.state,depth-1,-beta,-alpha,1);
+      if(stopSearch)break;
+      if(score>iterationScore){iterationScore=score;iterationBest=m;}
+      if(score>alpha)alpha=score;
+    }
+    if(stopSearch)break;
+    bestMove=iterationBest;bestScore=iterationScore;completedDepth=depth;
+    TT.set(positionKey(board,state),{depth,score:bestScore,flag:'exact',move:bestMove});
+    if(Math.abs(bestScore)>=MATE_THRESHOLD)break;
+  }
+
+  /* The engine only plays Black in this UI, but keep this search symmetric. */
+  void completedDepth;
+  void bestScore;
+  return bestMove||rootMoves[0];
+}
+
+/* ---------- UI ---------- */
+let board=createInitialBoard();
+let state={turn:'w',castling:{wK:true,wQ:true,bK:true,bQ:true},enPassant:null,halfmoveClock:0};
+let selected=null;
+let legalMovesForSelected=[];
+let gameOver=false;
+let lastMove=null;
+let positionHistory=[positionKey(board,state)];
+
+const boardEl=document.getElementById('board');
+const statusEl=document.getElementById('status');
+
+function render(){
+  boardEl.innerHTML='';
+  const kingPos=findKing(board,state.turn);
+  const check=kingPos&&isInCheck(board,state.turn);
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const sq=document.createElement('div');
+    sq.className='sq '+((r+c)%2===0?'light':'dark');
+    sq.dataset.r=r;sq.dataset.c=c;
+    if(lastMove && ((lastMove.from[0]===r&&lastMove.from[1]===c)||(lastMove.to[0]===r&&lastMove.to[1]===c)))sq.classList.add('last-move');
+    if(selected&&selected.r===r&&selected.c===c)sq.classList.add('selected');
+    if(check&&kingPos.r===r&&kingPos.c===c)sq.classList.add('in-check');
+
+    const moveHere=legalMovesForSelected.find(m=>m.to[0]===r&&m.to[1]===c);
+    if(moveHere)sq.classList.add(moveHere.capture||moveHere.enPassant?'capture-hint':'move-dot');
+
+    const piece=board[r][c];
+    if(piece){
+      const span=document.createElement('span');
+      span.className='piece '+(piece.color==='w'?'piece-w':'piece-b');
+      span.textContent=UNICODE[piece.color+piece.type];
+      sq.appendChild(span);
+    }
+    if(r===7){
+      const f=document.createElement('span');f.className='coord-file';f.textContent=String.fromCharCode(97+c);sq.appendChild(f);
+    }
+    if(c===0){
+      const rank=document.createElement('span');rank.className='coord-rank';rank.textContent=8-r;sq.appendChild(rank);
+    }
+
+    sq.addEventListener('click',onSquareClick);
+    boardEl.appendChild(sq);
+  }
+}
+
+function applyMove(move){
+  const result=makeMove(board,state,move);
+  board=result.board;state=result.state;lastMove=move;
+  positionHistory.push(positionKey(board,state));
+}
+
+function onSquareClick(e){
+  if(gameOver||state.turn!==HUMAN_COLOR)return;
+  const r=+e.currentTarget.dataset.r,c=+e.currentTarget.dataset.c;
+
+  if(selected){
+    const move=legalMovesForSelected.find(m=>m.to[0]===r&&m.to[1]===c);
+    if(move){
+      applyMove(move);selected=null;legalMovesForSelected=[];render();
+      if(!checkGameEnd()){
+        statusEl.textContent='Engine is thinking';statusEl.classList.add('thinking');
+        setTimeout(engineMove,40);
+      }
+      return;
+    }
+  }
+
+  const piece=board[r][c];
+  if(piece&&piece.color===HUMAN_COLOR){
+    selected={r,c};
+    legalMovesForSelected=generateLegalMoves(board,HUMAN_COLOR,state).filter(m=>m.from[0]===r&&m.from[1]===c);
+  }else{
+    selected=null;legalMovesForSelected=[];
+  }
+  render();
+}
+
+function engineMove(){
+  if(gameOver||state.turn===HUMAN_COLOR)return;
+  const move=findBestMove(board,state);
+  statusEl.classList.remove('thinking');
+  if(move)applyMove(move);
+  render();
+  checkGameEnd();
+}
+
+function updateStatus(){
+  const turnName=state.turn==='w'?'White':'Black';
+  const inCheck=isInCheck(board,state.turn);
+  statusEl.textContent=turnName+' to move'+(inCheck?' — Check!':'');
+}
+
+function checkGameEnd(){
+  const moves=generateLegalMoves(board,state.turn,state);
+  if(!moves.length){
+    gameOver=true;
+    statusEl.classList.remove('thinking');
+    if(isInCheck(board,state.turn)){
+      const winner=state.turn==='w'?'Black':'White';
+      statusEl.textContent='Checkmate — '+winner+' wins!';
+    }else statusEl.textContent='Stalemate — Draw';
+    return true;
+  }
+  if((state.halfmoveClock||0)>=100){
+    gameOver=true;
+    statusEl.classList.remove('thinking');
+    statusEl.textContent='Draw — 50-move rule';
+    return true;
+  }
+  const reps=positionHistory.filter(k=>k===positionKey(board,state)).length;
+  if(reps>=3){
+    gameOver=true;
+    statusEl.classList.remove('thinking');
+    statusEl.textContent='Draw — threefold repetition';
+    return true;
+  }
+  if(hasInsufficientMaterial(board)){
+    gameOver=true;
+    statusEl.classList.remove('thinking');
+    statusEl.textContent='Draw — insufficient material';
+    return true;
+  }
+  updateStatus();
+  return false;
+}
+
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  board=createInitialBoard();
+  state={turn:'w',castling:{wK:true,wQ:true,bK:true,bQ:true},enPassant:null,halfmoveClock:0};
+  selected=null;legalMovesForSelected=[];gameOver=false;lastMove=null;
+  positionHistory=[positionKey(board,state)];
+  TT.clear();
+  statusEl.classList.remove('thinking');
+  render();updateStatus();
+});
+
+render();updateStatus();
+</script>
+</body>
+</html>
